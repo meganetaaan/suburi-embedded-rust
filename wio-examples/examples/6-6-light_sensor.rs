@@ -9,6 +9,7 @@
 #![no_std]
 #![no_main]
 
+use wio_examples::Led;
 use panic_halt as _;
 use wio_terminal as wio;
 
@@ -37,6 +38,12 @@ fn main() -> ! {
     let mut delay = Delay::new(core.SYST, &mut clocks);
 
     // TODO: 光センサ読み取り用の ADC とピンとを初期化する
+    let (mut light, mut pd1) = sets.light_sensor.init(
+        peripherals.ADC1,
+        &mut clocks,
+        &mut peripherals.MCLK,
+        &mut sets.port,
+    );
 
     // UARTドライバオブジェクトを初期化する
     let mut serial = sets.uart.init(
@@ -47,8 +54,15 @@ fn main() -> ! {
         &mut sets.port,
     );
 
+    let mut led = Led::new(sets.user_led, &mut sets.port);
+
     loop {
         // TODO: ADC入力を1秒に1回取得して、UARTに出力する
-
+        let result: Result<u16, ()> = nb::block!(light.read(&mut pd1));
+        if let Ok(value) = result {
+            writeln!(&mut serial, "value: {}", value).unwrap();
+            delay.delay_ms(100u16);
+            led.toggle();
+        }
     }
 }
