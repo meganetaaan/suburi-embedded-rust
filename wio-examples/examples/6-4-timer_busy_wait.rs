@@ -28,9 +28,15 @@ fn main() -> ! {
     let mut led = Led::new(sets.user_led, &mut sets.port);
 
     // TODO: Delay構造体オブジェクトを取得する
+    // Cortex-M共通のペリフェラルを取得する
+    let core = CorePeripherals::take().unwrap();
+    let mut clocks = GenericClockController::with_external_32kosc(peripherals.GCLK, &mut peripherals.MCLK, &mut peripherals.OSC32KCTRL, &mut peripherals.OSCCTRL, &mut peripherals.NVMCTRL);
+
+    let mut delay = Delay::new(core.SYST, &mut clocks);
 
     loop {
         // TODO: Lチカのコードを書く
-        
+        led.toggle();
+        delay.delay_ms(1000u16);
     }
 }
