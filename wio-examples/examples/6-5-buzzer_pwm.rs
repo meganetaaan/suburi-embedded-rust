@@ -48,11 +48,16 @@ fn main() -> ! {
     loop {
         for freq in freqs.iter() {
             // TODO: 周期（周波数）を設定する
+            buzzer.set_period(freq.hz());
 
             // TODO: デューティ比を50%に設定する
+            let max_duty = buzzer.get_max_duty();
+            buzzer.set_duty(Channel::_4, max_duty / 2);
 
             // TODO: 1秒鳴らして止める
-
+            buzzer.enable(Channel::_4);
+            delay.delay_ms(1000u16);
+            buzzer.disable(Channel::_4);
         }
     }
 }
