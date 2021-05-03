@@ -17,3 +17,4 @@ RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
   && rm -rf /var/lib/apt/lists/*
 RUN rustup target add thumbv7em-none-eabihf
 RUN cargo install cargo-generate hf2-cli cargo-hf2
+ENV DISPLAY=host.docker.internal:0

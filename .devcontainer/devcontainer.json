@@ -2,16 +2,21 @@
 // https://github.com/microsoft/vscode-dev-containers/tree/v0.166.1/containers/rust
 {
 	"name": "Rust",
-	"build": {
-		"dockerfile": "Dockerfile"
-	},
-	"runArgs": [
-		"--privileged",
-		"--cap-add=SYS_PTRACE",
-		"--volume=/dev/:/dev/",
-		"--security-opt",
-		"seccomp=unconfined"
+	"dockerComposeFile": [
+		"docker-compose.yaml"
 	],
+	"service": "dev",
+	"workspaceFolder": "/workspace",
+	// "build": {
+	// 	"dockerfile": "Dockerfile"
+	// },
+	// "runArgs": [
+	// 	"--privileged",
+	// 	"--cap-add=SYS_PTRACE",
+	// 	"--volume=/dev/:/dev/",
+	// 	"--security-opt",
+	// 	"seccomp=unconfined"
+	// ],
 
 	// Set *default* container specific settings.json values on container create.
 	"settings": { 
