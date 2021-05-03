@@ -54,9 +54,12 @@ fn main() -> ! {
     );
 
     // TODO: デバイスIDを取得、0x33が格納されている
+    let accel_id = accel.get_device_id().unwrap();
+    writeln!(&mut serial, "Accelerometer ID: 0x{:X}", accel_id).unwrap();
 
     // TODO: 1秒ごとに加速度センサから読み取った値をシリアルに出力する
     loop {
-
+        let F32x3 { x, y, z } = accel.accel_norm().unwrap();
+        writeln!(&mut serial, "X: {:.2}, Y:{:.2}, Z:{:.2}", x, y, z).unwrap();
     }
 }
