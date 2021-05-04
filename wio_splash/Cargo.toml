@@ -1,5 +1,5 @@
 [package]
-name = "eg-playground"
+name = "wio_splash"
 version = "0.1.0"
 authors = ["Shinya Ishikawa <ishikawa.s.1027@gmail.com>"]
 edition = "2018"
@@ -8,5 +8,3 @@ edition = "2018"
 
 [dependencies]
 embedded-graphics = "0.6.2"
-embedded-graphics-simulator = "0.2.1"
-wio_splash = {"path" = "../wio_splash"}
