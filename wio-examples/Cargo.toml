@@ -15,19 +15,19 @@ embedded-graphics = "0.6.2"
 heapless = "0.5.6"
 
 # 7章でコメントアウトを外して下さい
-# wio_splash = { path = "../wio_splash", optional = true }
+wio_splash = { path = "../wio_splash", optional = true }
 microfft = { version = "0.3.1", optional = true }
 micromath = { version = "1.1.0", optional = true }
 
 [features]
 # 7章でコメントアウトを外して下さい
-# splash = ["wio_splash"]
+splash = ["wio_splash"]
 app = ["microfft", "micromath"]
 
 # 7章でコメントアウトを外して下さい
-# [[example]]
-# name = "7-4-splash"
-# required-features = ["splash"]
+[[example]]
+name = "7-4-splash"
+required-features = ["splash"]
 
 [[example]]
 name = "8-1-stop_watch"
