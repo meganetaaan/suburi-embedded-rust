@@ -35,10 +35,29 @@ fn main() -> ! {
     let mut sets = Pins::new(peripherals.PORT).split();
 
     // TODO: ディスプレイドライバを初期化する
+    let (mut display, _backlight) = sets
+        .display
+        .init(
+            &mut clocks,
+            peripherals.SERCOM7,
+            &mut peripherals.MCLK,
+            &mut sets.port,
+            58.mhz(),
+            &mut delay,
+        )
+        .unwrap();
 
     // TODO: LCDを黒色で塗りつぶす
+    let style = PrimitiveStyleBuilder::new()
+        .fill_color(Rgb565::BLACK).build();
+    let background = Rectangle::new(Point::new(0, 0), Point::new(319, 239))
+        .into_styled(style);
+    background.draw(&mut display).unwrap();
 
     // TODO: 画面情報に「Hello Wio Terminal!」と表示する
-
+    Text::new("Hello Wio Terminal!", Point::new(30, 30))
+        .into_styled(TextStyle::new(Font12x16, Rgb565::GREEN))
+        .draw(&mut display)
+        .unwrap();
     loop {}
 }
