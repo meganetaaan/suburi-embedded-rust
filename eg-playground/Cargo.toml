@@ -9,4 +9,4 @@ edition = "2018"
 [dependencies]
 embedded-graphics = "0.6.2"
 embedded-graphics-simulator = "0.2.1"
-wio_splash = {"path" = "../wio_splash"}
+wio_splash = {path = "../wio_splash"}
