@@ -74,11 +74,29 @@ where
     // TODO: カウント表示エリアをクリアする
     const FONT_WIDTH: i32 = 24;
     const FONT_HEIGHT: i32 = 32;
+    egrectangle!(
+        top_left = (0, 0),
+        bottom_right = (SCREEN_WIDTH - 1, FONT_HEIGHT),
+        style = primitive_style!(fill_color = Rgb565::BLACK)
+    ).draw(display)?;
 
     // TODO: 現在のタイムスタンプを取得する
+    let counter = unsafe{
+        CTX.as_ref().unwrap().timer_counter
+    };
+    let elapsed_s = (counter as f32) / 16.0;
 
     // TODO: タイムスタンプを描画する
+    let mut textbuffer = String::<U256>::new();
+    write!(&mut textbuffer, "{:.2}", elapsed_s).unwrap();
 
+    let length = textbuffer.len();
+    let left = SCREEN_WIDTH - (length as i32) * FONT_WIDTH;
+    egtext!(
+        text = textbuffer.as_str(),
+        top_left = (left, 0),
+        style = text_style!(font = Font24x32, text_color = Rgb565::WHITE)
+    ).draw(display)?;
 
     Ok(())
 }
@@ -180,6 +198,39 @@ fn main() -> ! {
     loop {
         match state {
             // TODO: ステートマシンを実装する
+            State::Initializing => {
+                draw(&mut display).unwrap();
+                state = State::Idle;
+            }
+            State::Idle => {
+                if button_start.is_low().unwrap() {
+                    unsafe {
+                        CTX.as_mut().unwrap().tc3.enable_interrupt()
+                    }
+                    beep(&mut buzzer, &mut delay, 880.hz(), 200u16);
+                    state = State::Running
+                } else if button_clear.is_low().unwrap() {
+                    unsafe {
+                        CTX.as_mut().unwrap().timer_counter = 0
+                    }
+                    beep(&mut buzzer, &mut delay, 1760.hz(), 200u16);
+                    draw(&mut display).unwrap();
+                }
+            } 
+            State::Running => {
+                if button_stop.is_low().unwrap() {
+                    unsafe {
+                        CTX.as_mut().unwrap().tc3.disable_interrupt()
+                    }
+                    draw(&mut display).unwrap();
+                    beep(&mut buzzer, &mut delay, 880.hz(), 50u16);
+                    delay.delay_ms(50u16);
+                    beep(&mut buzzer, &mut delay, 880.hz(), 100u16);
+                    state = State::Idle;
+                } else {
+                    draw(&mut display).unwrap();
+                }
+            }
         }
     }
 }
@@ -189,6 +240,9 @@ fn main() -> ! {
 fn TC3() {
     unsafe {
         // TODO: タイマカウンタをインクリメントして次のタイマを再開する
+        let ctx = CTX.as_mut().unwrap();
+        ctx.tc3.wait().ok();
+        ctx.timer_counter += 1;
     }
 }
 
