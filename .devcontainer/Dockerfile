@@ -14,6 +14,7 @@ RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
   libusb-1.0-0-dev \
   libsdl2-dev \
   libssl-dev \
+  nodejs \
   && rm -rf /var/lib/apt/lists/*
 RUN rustup target add thumbv7em-none-eabihf
 RUN cargo install cargo-generate hf2-cli cargo-hf2
