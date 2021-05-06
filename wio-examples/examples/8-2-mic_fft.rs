@@ -91,6 +91,15 @@ fn main() -> ! {
     let mut delay = Delay::new(core.SYST, &mut clocks);
 
     // TODO: フリーランニングモードでADCを動かすようにInterruptAdc型を構築する
+    let (microphone_adc, mut microphone_pin) = sets.microphone.init(
+        peripherals.ADC1,
+        &mut clocks,
+        &mut peripherals.MCLK,
+        &mut sets.port,
+    );
+    let mut microphone_adc: InterruptAdc<_, FreeRunning> = InterruptAdc::from(microphone_adc);
+
+    microphone_adc.start_conversion(&mut microphone_pin);
 
     // デバッグ用UARTを初期化する
     let mut serial = sets.uart.init(
@@ -115,6 +124,18 @@ fn main() -> ! {
         .unwrap();
 
     // TODO: 共有リソースを初期化する
+    unsafe {
+        CTX = Some(Ctx {
+            adc: microphone_adc,
+            buffers: [Vec::new(), Vec::new()],
+            sampling_buffer: None,
+            processing_buffer: None,
+        });
+        let mut ctx = CTX.as_mut().unwrap();
+        let (first, rest) = ctx.buffers.split_first_mut().unwrap();
+        ctx.sampling_buffer = Some(first);
+        ctx.processing_buffer = Some(&mut rest[0]);
+    }
 
     // ADC変換完了割り込み(RESRDY)を有効にしてサンプリングを開始する
     writeln!(&mut serial, "start").unwrap();
@@ -149,7 +170,7 @@ fn main() -> ! {
             style = primitive_style!(fill_color = Rgb565::BLACK)
         )
         .draw(display)
-    };
+    }
     clear_screen(&mut display).unwrap();
 
     const BAR_WIDTH: i32 = 2;
@@ -160,9 +181,111 @@ fn main() -> ! {
     let mut prev_bar_position = [0u8; NUMBER_OF_BARS as usize];
     let mut stop_req = false;
     let mut stop_ack = false;
+
     loop {
         // TODO: `processing_buffer`が埋まっていれば、FFTを実行しスペクトラムを描画する
         //       停止ボタンが押された場合は、棒グラフを表示する
+        if button_stop.is_low().unwrap() {
+            stop_req = true;
+        }
+        let processing_buffer = unsafe {
+            let ctx = CTX.as_mut().unwrap();
+            ctx.processing_buffer.as_mut().unwrap()
+        };
+        let len = processing_buffer.len();
+        let cap = processing_buffer.capacity(); // TODO: capacity?
+        if len == cap {
+            for i in 0..FFT_POINTS {
+                processing_buffer[i] *= hann_factor[i];
+            }
+            let result = microfft::real::rfft_256(processing_buffer.as_mut());
+
+            let offset_top = 0;
+            let offset_left = (SCREEN_WIDTH - DRAW_AREA_WIDTH) / 2;
+            let area_height = SCREEN_HEIGHT;
+            for (step, spectrum) in result.iter().enumerate() {
+                let power = spectrum.norm_sqr() / (FFT_POINTS * FFT_POINTS) as f32;
+                let relative_power = if power <= 0.0 {
+                    core::f32::NEG_INFINITY
+                } else {
+                    power.log10() * 10.0
+                };
+                let height = -(((relative_power + 50.0) * 5.0).round().max(-area_height as f32).min(0.0) as i32);
+                let intensity = (height * 255) / (SCREEN_HEIGHT / 2);
+                let red = if height < SCREEN_HEIGHT / 2 {
+                    255 - intensity
+                } else {
+                    0
+                };
+                let green = if height < SCREEN_HEIGHT / 2 {
+                    intensity
+                } else {
+                    511 - intensity
+                };
+                let blue = if height < SCREEN_HEIGHT / 2 {
+                    0
+                } else {
+                    intensity - 256
+                };
+
+                let start_x = offset_left + step as i32 * BAR_WIDTH;
+                let end_x = offset_left + (step + 1) as i32 * BAR_WIDTH;
+                let prev_y = prev_bar_position[step] as i32;
+                egrectangle!(
+                    top_left = (start_x, prev_y),
+                    bottom_right = (end_x, (prev_y + 2).min(area_height - 1)),
+                    style = primitive_style!(fill_color = Rgb565::BLACK)
+                )
+                .draw(&mut display)
+                .unwrap();
+                if stop_req {
+                    egrectangle!(
+                        top_left = (start_x, offset_top + height),
+                        bottom_right = (end_x, area_height - 1),
+                         style = primitive_style!(
+                             fill_color = Rgb888::new(
+                                 red as u8,
+                                 green as u8,
+                                 blue as u8
+                             )
+                             .into()
+                         )
+                    )
+                    .draw(&mut display)
+                    .unwrap();
+                } else {
+                    egrectangle!(
+                        top_left = (start_x, offset_top + height),
+                        bottom_right = (
+                            end_x,
+                            (offset_top + height + 2).min(area_height - 1)
+                        ),
+                        style = primitive_style!(
+                             fill_color = Rgb888::new(
+                                 red as u8,
+                                 green as u8,
+                                 blue as u8
+                             )
+                             .into()
+                        )
+                    )
+                    .draw(&mut display)
+                    .unwrap();
+                }
+                prev_bar_position[step] = (offset_top + height) as u8;
+            }
+
+            processing_buffer.clear();
+            stop_ack = stop_req;
+        }
+
+        if stop_ack {
+            stop_req = false;
+            stop_ack = false;
+            while !button_restart.is_low().unwrap() {}
+            clear_screen(&mut display).unwrap();
+        }
+
     }
 }
 
@@ -170,4 +293,29 @@ fn main() -> ! {
 fn ADC1_RESRDY() {
     // TODO: データをサンプリングし、`sampling_buffer`を埋める。
     //       `sampling_buffer`がいっぱいになったら`processing_buffer`と入れ替える。
+    static mut AVERAGE: f32 = 0.0;
+    static mut AVERAGE_COUNT: u32 = 0;
+    unsafe {
+        let ctx = CTX.as_mut().unwrap();
+        if let Some(sample) = ctx.adc.service_interrupt_ready() {
+            *AVERAGE += sample as f32;
+            *AVERAGE_COUNT += 1;
+            if *AVERAGE_COUNT == AVERAGING_FACTOR {
+                let sampling_buffer = 
+                    ctx.sampling_buffer.as_mut().unwrap();
+                if sampling_buffer.len() == sampling_buffer.capacity() {
+                    if ctx.processing_buffer.as_mut().unwrap().len() == 0  {
+                        core::mem::swap(
+                            &mut ctx.processing_buffer,
+                            &mut ctx.sampling_buffer,
+                        );
+                    }
+                } else {
+                    let _ = sampling_buffer.push(*AVERAGE / (AVERAGING_FACTOR as f32));
+                }
+                *AVERAGE_COUNT = 0;
+                *AVERAGE = 0.0;
+            }
+        }
+    }
 }
