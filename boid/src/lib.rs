@@ -5,35 +5,38 @@ use embedded_graphics::pixelcolor::RgbColor;
 use embedded_graphics::prelude::Drawable;
 use embedded_graphics::prelude::Point;
 use embedded_graphics::prelude::Primitive;
-use embedded_graphics::primitives::Circle;
-use embedded_graphics::primitives::Line;
+use embedded_graphics::primitives::Rectangle;
+use embedded_graphics::primitives::Triangle;
 use embedded_graphics::style::PrimitiveStyle;
 use embedded_graphics::DrawTarget;
 use micromath::F32Ext;
 use rand::prelude::*;
-const COHESION_FORCE: f32 = 0.004;
-const SEPARATION_FORCE: f32 = 0.5;
-const ALIGNMENT_FORCE: f32 = 0.05;
+const COHESION_FORCE: f32 = 0.005;
+const SEPARATION_FORCE: f32 = 0.1;
+const ALIGNMENT_FORCE: f32 = 0.08;
 const BOUNDARY_FORCE: f32 = 0.01;
-const COHESION_DISTANCE: f32 = 0.4;
-const SEPARATION_DISTANCE: f32 = 0.05;
+const COHESION_DISTANCE: f32 = 0.35;
+const SEPARATION_DISTANCE: f32 = 0.1;
 const ALIGNMENT_DISTANCE: f32 = 0.1;
 const COHESION_ANGLE: f32 = PI / 2.0;
 const SEPARATION_ANGLE: f32 = PI / 2.0;
 const ALIGNMENT_ANGLE: f32 = PI / 3.0;
 const MIN_VELOCITY: f32 = 0.005;
 const MAX_VELOCITY: f32 = 0.03;
-const N: usize = 2;
-const M: usize = 50;
-const SCALE: f32 = 100.0;
-const CENTER_X: i32 = 160;
-const CENTER_Y: i32 = 120;
-const RAD: u32 = 3;
+const N: usize = 3;
+const M: usize = 30;
+const WING_WIDTH: f32 = 5.0;
+pub const BG_COLOR: Rgb565 = Rgb565::BLACK;
+pub const BOID_COLOR: Rgb565 = Rgb565::WHITE;
+pub const SPECIAL_BOID_COLOR: Rgb565 = Rgb565::RED;
+
 #[derive(Debug, Clone, Copy)]
 pub struct Boid {
     position: [f32; N],
     _prev_position: [f32; N],
     velocity: [f32; N],
+    _prev_velocity: [f32; N],
+    _prev_points: Option<(Point, Point, Point)>,
 }
 
 fn norm(x: [f32; N]) -> f32 {
@@ -55,7 +58,7 @@ fn calc_coherence(source: &Boid, boids: &[Boid; M], dist: [f32; M], angle: [f32;
     }
     if cnt > 0 {
         let average = divide(coh, cnt as f32);
-        multiply(minus(average, source.velocity), COHESION_FORCE)
+        multiply(minus(average, source.position), COHESION_FORCE)
     } else {
         coh // [0.0; N]
     }
@@ -158,6 +161,8 @@ impl Boid {
             position: [0.0; N],
             _prev_position: [0.0; N],
             velocity: [0.0; N],
+            _prev_velocity: [0.0; N],
+            _prev_points: None,
         }
     }
 }
@@ -179,6 +184,7 @@ pub struct Boids {
 
 impl Boids {
     pub fn new() -> Self {
+        assert_eq!((N == 2 || N == 3), true);
         Boids {
             boids: [Boid::new(); M],
             _dv_coh: [[0.0; N]; M],
@@ -215,6 +221,8 @@ impl Boids {
             self._dv_bnd[i] = calc_boundary(&source, &self.boids, dist, angle);
         }
         for (idx, boid) in self.boids.iter_mut().enumerate() {
+            boid._prev_position = boid.position;
+            boid._prev_velocity = boid.velocity;
             boid.velocity = plus(
                 boid.velocity,
                 plus(
@@ -231,53 +239,134 @@ impl Boids {
             } else if v_abs > MAX_VELOCITY {
                 boid.velocity = divide(multiply(boid.velocity, MAX_VELOCITY), v_abs);
             }
-            boid._prev_position = boid.position;
             boid.position = plus(boid.position, boid.velocity);
         }
     }
 }
 
-pub fn draw_boid<D>(boid: &Boid, idx: usize,display: &mut D) -> Result<(), D::Error>
+fn calc_size(position: [f32; N]) -> f32 {
+    if N == 3 {
+        let z = position[2]; // -1.0 < z < 1.0
+        let w = (WING_WIDTH as f32) * (z + 1.0);
+        w
+    } else {
+        WING_WIDTH
+    }
+}
+struct DrawContext {
+    center_x: i32,
+    center_y: i32,
+    scale: f32,
+}
+
+fn calc_points(position: [f32; N], velocity: [f32; N], ctx: &DrawContext) -> (Point, Point, Point) {
+    let center_x = ctx.center_x;
+    let center_y = ctx.center_y;
+    let scale = ctx.scale;
+    let size = calc_size(position);
+    let n = (velocity[0] * velocity[0] + velocity[1] * velocity[1]).sqrt();
+    let v = norm(velocity);
+    let z = (MAX_VELOCITY - velocity[2].abs()) / MAX_VELOCITY; // 0.005 ~ 0.03
+    let s = 1.0 + v / MAX_VELOCITY;
+    let aprox_zoom = if position[2] < -1.4 {
+        0.1
+    } else {
+        position[2] + 1.5
+    };
+    let vel_x = (velocity[0] / n) * size;
+    let vel_y = (velocity[1] / n) * size;
+    let start_x = (position[0] * aprox_zoom * scale) as i32;
+    let start_y = (position[1] * aprox_zoom * scale) as i32;
+    let top = Point::new(
+        start_x + (vel_x * s * z) as i32 + center_x,
+        start_y + (vel_y * s * z) as i32 + center_y,
+    );
+    let right = Point::new(
+        start_x + (vel_y / s) as i32 + center_x,
+        start_y - (vel_x / s) as i32 + center_y,
+    );
+    let left = Point::new(
+        start_x - (vel_y / s) as i32 + center_x,
+        start_y + (vel_x / s) as i32 + center_y,
+    );
+    (top, right, left)
+}
+
+fn clear_prev_boid<D>(
+    boid: &Boid,
+    _idx: usize,
+    display: &mut D,
+    _ctx: &DrawContext,
+) -> Result<(), D::Error>
 where
     D: DrawTarget<Rgb565>,
 {
-    let prev_center = Point::new(
-        (boid._prev_position[0] * SCALE) as i32 + CENTER_X,
-        (boid._prev_position[1] * SCALE) as i32 + CENTER_Y,
-    );
-    let center = Point::new(
-        (boid.position[0] * SCALE) as i32 + CENTER_X,
-        (boid.position[1] * SCALE) as i32 + CENTER_Y,
-    );
-    let tip = Point::new(
-        ((boid.position[0] + boid.velocity[0]) * SCALE) as i32 + CENTER_X,
-        ((boid.position[1] + boid.velocity[1]) * SCALE) as i32 + CENTER_Y,
-    );
-    let color = if idx == 0 {Rgb565::RED} else {Rgb565::WHITE};
-    Circle::new(prev_center, RAD)
-        .into_styled(PrimitiveStyle::with_fill(Rgb565::BLACK))
-        .draw(display)?;
-    Circle::new(center, RAD)
-        .into_styled(PrimitiveStyle::with_stroke(color, 1))
-        .draw(display)?;
-    Line::new(center, tip)
-        .into_styled(PrimitiveStyle::with_stroke(color, 1))
-        .draw(display)?;
-    if idx == 0 {
-        /* none */
-    // Circle::new(center, (COHESION_DISTANCE * (SCALE as f32)) as u32)
-    //     .into_styled(PrimitiveStyle::with_stroke(color, 1))
-    //     .draw(display)?;
+    let (top, right, left) = boid._prev_points.unwrap();
+    if right == left {
+        Rectangle::new(top, top)
+            .into_styled(PrimitiveStyle::with_fill(BG_COLOR))
+            .draw(display)?
+    } else {
+        Triangle::new(top, right, left)
+            .into_styled(PrimitiveStyle::with_stroke(BG_COLOR, 1))
+            .draw(display)?;
+    }
+    Ok(())
+}
+fn draw_boid<D>(
+    boid: &mut Boid,
+    _idx: usize,
+    display: &mut D,
+    ctx: &DrawContext,
+) -> Result<(), D::Error>
+where
+    D: DrawTarget<Rgb565>,
+{
+    let (top, right, left) = calc_points(boid.position, boid.velocity, ctx);
+    boid._prev_points = Some((top, right, left));
+    let color: Rgb565 = if _idx == 0 {
+        SPECIAL_BOID_COLOR
+    } else {
+        BOID_COLOR
+    };
+    if right == left {
+        Rectangle::new(top, top)
+            .into_styled(PrimitiveStyle::with_fill(color))
+            .draw(display)?
+    } else {
+        Triangle::new(top, right, left)
+            .into_styled(PrimitiveStyle::with_stroke(color, 1))
+            .draw(display)?;
     }
     Ok(())
 }
 
-pub fn draw_boids<D>(boids: &Boids, display: &mut D) -> Result<(), D::Error>
+pub fn draw_boids<D>(boids: &mut Boids, display: &mut D) -> Result<(), D::Error>
 where
     D: DrawTarget<Rgb565>,
 {
+    let ctx: DrawContext = {
+        let (w, h) = display.size().into();
+        let center_x: i32 = (w / 2) as i32;
+        let center_y: i32 = (h / 2) as i32;
+        let scale: f32 = if center_x < center_y {
+            (center_x as f32) * 0.5
+        } else {
+            (center_y as f32) * 0.5
+        };
+        DrawContext {
+            center_x,
+            center_y,
+            scale,
+        }
+    };
     for (idx, boid) in boids.boids.iter().enumerate() {
-        draw_boid(boid, idx, display)?;
+        if boid._prev_points != None {
+            clear_prev_boid(boid, idx, display, &ctx)?;
+        }
+    }
+    for (idx, boid) in boids.boids.iter_mut().enumerate() {
+        draw_boid(boid, idx, display, &ctx)?;
     }
     Ok(())
 }

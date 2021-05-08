@@ -13,27 +13,13 @@ use embedded_graphics as eg;
 use panic_halt as _;
 use wio_terminal as wio;
 
-use eg::{egrectangle, primitive_style, fonts::*, pixelcolor::*, prelude::*, primitives::*, style::*};
+use eg::{pixelcolor::*, prelude::*, primitives::*, style::*};
 use wio::hal::clock::GenericClockController;
 use wio::hal::delay::Delay;
 use wio::pac::{CorePeripherals, Peripherals};
 use wio::prelude::*;
 use wio::{entry, Pins};
 use boid::*;
-
-static SCREEN_WIDTH: u16 = 320;
-static SCREEN_HEIGHT: u16 = 240;
-
-fn clear_screen<T: embedded_graphics::DrawTarget<Rgb565>>(
-    display: &mut T,
-) -> Result<(), T::Error> {
-    egrectangle!(
-        top_left = (0, 0),
-        bottom_right = ((SCREEN_WIDTH - 1).into(), (SCREEN_HEIGHT - 1).into()),
-        style = primitive_style!(fill_color = Rgb565::BLACK)
-    )
-    .draw(display)
-}
 
 #[entry]
 fn main() -> ! {
@@ -74,6 +60,6 @@ fn main() -> ! {
     loop {
         boids.update();
         // clear_screen(&mut display).unwrap();
-        draw_boids(&boids, &mut display).unwrap();
+        draw_boids(&mut boids, &mut display).unwrap();
     }
 }
