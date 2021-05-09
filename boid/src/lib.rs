@@ -11,32 +11,36 @@ use embedded_graphics::style::PrimitiveStyle;
 use embedded_graphics::DrawTarget;
 use micromath::F32Ext;
 use rand::prelude::*;
-const COHESION_FORCE: f32 = 0.005;
-const SEPARATION_FORCE: f32 = 0.1;
-const ALIGNMENT_FORCE: f32 = 0.08;
+const COHESION_FORCE: f32 = 0.004;
+const SEPARATION_FORCE: f32 = 0.002;
+const ALIGNMENT_FORCE: f32 = 0.04;
 const BOUNDARY_FORCE: f32 = 0.01;
-const COHESION_DISTANCE: f32 = 0.35;
+const COHESION_DISTANCE: f32 = 0.5;
 const SEPARATION_DISTANCE: f32 = 0.1;
 const ALIGNMENT_DISTANCE: f32 = 0.1;
-const COHESION_ANGLE: f32 = PI / 2.0;
+const COHESION_ANGLE: f32 = PI / 2.2;
 const SEPARATION_ANGLE: f32 = PI / 2.0;
-const ALIGNMENT_ANGLE: f32 = PI / 3.0;
+const ALIGNMENT_ANGLE: f32 = PI / 2.5;
 const MIN_VELOCITY: f32 = 0.005;
 const MAX_VELOCITY: f32 = 0.03;
 const N: usize = 3;
 const M: usize = 30;
-const WING_WIDTH: f32 = 5.0;
+
+const WING_WIDTH: f32 = 4.0;
 pub const BG_COLOR: Rgb565 = Rgb565::BLACK;
 pub const BOID_COLOR: Rgb565 = Rgb565::WHITE;
-pub const SPECIAL_BOID_COLOR: Rgb565 = Rgb565::RED;
+pub const PLAYER_COLOR: Rgb565 = Rgb565::RED;
+#[derive(PartialOrd, PartialEq)]
+enum Shape {
+    DOT = 0,
+    TRIANGLE = 1,
+}
+const DEFAULT_SHAPE: Shape = Shape::TRIANGLE;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Boid {
     position: [f32; N],
-    _prev_position: [f32; N],
     velocity: [f32; N],
-    _prev_velocity: [f32; N],
-    _prev_points: Option<(Point, Point, Point)>,
 }
 
 fn norm(x: [f32; N]) -> f32 {
@@ -69,8 +73,10 @@ fn calc_separation(source: &Boid, boids: &[Boid; M], dist: [f32; M], angle: [f32
     let mut cnt = 0;
     for i in 0..N {
         if dist[i] < SEPARATION_DISTANCE && angle[i] < SEPARATION_ANGLE {
+            let st = minus(source.position, boids[i].position);
+            let dd = dot(st, st);
             cnt += 1;
-            sep = plus(sep, minus(source.position, boids[i].position));
+            sep = plus(sep, divide(st, dd));
         }
     }
     if cnt > 0 {
@@ -159,10 +165,7 @@ impl Boid {
     fn new() -> Self {
         Boid {
             position: [0.0; N],
-            _prev_position: [0.0; N],
             velocity: [0.0; N],
-            _prev_velocity: [0.0; N],
-            _prev_points: None,
         }
     }
 }
@@ -221,8 +224,6 @@ impl Boids {
             self._dv_bnd[i] = calc_boundary(&source, &self.boids, dist, angle);
         }
         for (idx, boid) in self.boids.iter_mut().enumerate() {
-            boid._prev_position = boid.position;
-            boid._prev_velocity = boid.velocity;
             boid.velocity = plus(
                 boid.velocity,
                 plus(
@@ -244,13 +245,13 @@ impl Boids {
     }
 }
 
-fn calc_size(position: [f32; N]) -> f32 {
+fn calc_size(position: [f32; N], wing_width: f32) -> f32 {
     if N == 3 {
         let z = position[2]; // -1.0 < z < 1.0
-        let w = (WING_WIDTH as f32) * (z + 1.0);
+        let w = (wing_width as f32) * (z + 1.0);
         w
     } else {
-        WING_WIDTH
+        wing_width
     }
 }
 struct DrawContext {
@@ -259,11 +260,37 @@ struct DrawContext {
     scale: f32,
 }
 
-fn calc_points(position: [f32; N], velocity: [f32; N], ctx: &DrawContext) -> (Point, Point, Point) {
+pub struct DrawOption {
+    wing_width: f32,
+    bg_color: Rgb565,
+    boid_color: Rgb565,
+    player_color: Rgb565,
+    shape: Shape
+}
+
+impl DrawOption {
+    pub fn new() -> Self {
+        DrawOption {
+            wing_width: WING_WIDTH,
+            bg_color: BG_COLOR,
+            boid_color: BOID_COLOR,
+            player_color: PLAYER_COLOR,
+            shape: DEFAULT_SHAPE,
+        }
+    }
+}
+
+impl Default for DrawOption {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+fn calc_points(position: [f32; N], velocity: [f32; N], ctx: &DrawContext, option: &DrawOption) -> (Point, Point, Point) {
     let center_x = ctx.center_x;
     let center_y = ctx.center_y;
     let scale = ctx.scale;
-    let size = calc_size(position);
+    let size = calc_size(position, option.wing_width as f32);
     let n = (velocity[0] * velocity[0] + velocity[1] * velocity[1]).sqrt();
     let v = norm(velocity);
     let z = (MAX_VELOCITY - velocity[2].abs()) / MAX_VELOCITY; // 0.005 ~ 0.03
@@ -278,8 +305,8 @@ fn calc_points(position: [f32; N], velocity: [f32; N], ctx: &DrawContext) -> (Po
     let start_x = (position[0] * aprox_zoom * scale) as i32;
     let start_y = (position[1] * aprox_zoom * scale) as i32;
     let top = Point::new(
-        start_x + (vel_x * s * z) as i32 + center_x,
-        start_y + (vel_y * s * z) as i32 + center_y,
+        start_x + (vel_x * s * z * 0.5) as i32 + center_x,
+        start_y + (vel_y * s * z * 0.5) as i32 + center_y,
     );
     let right = Point::new(
         start_x + (vel_y / s) as i32 + center_x,
@@ -292,81 +319,78 @@ fn calc_points(position: [f32; N], velocity: [f32; N], ctx: &DrawContext) -> (Po
     (top, right, left)
 }
 
-fn clear_prev_boid<D>(
-    boid: &Boid,
-    _idx: usize,
-    display: &mut D,
-    _ctx: &DrawContext,
-) -> Result<(), D::Error>
-where
-    D: DrawTarget<Rgb565>,
-{
-    let (top, right, left) = boid._prev_points.unwrap();
-    if right == left {
-        Rectangle::new(top, top)
-            .into_styled(PrimitiveStyle::with_fill(BG_COLOR))
-            .draw(display)?
-    } else {
-        Triangle::new(top, right, left)
-            .into_styled(PrimitiveStyle::with_stroke(BG_COLOR, 1))
-            .draw(display)?;
-    }
-    Ok(())
-}
-fn draw_boid<D>(
-    boid: &mut Boid,
-    _idx: usize,
-    display: &mut D,
-    ctx: &DrawContext,
-) -> Result<(), D::Error>
-where
-    D: DrawTarget<Rgb565>,
-{
-    let (top, right, left) = calc_points(boid.position, boid.velocity, ctx);
-    boid._prev_points = Some((top, right, left));
-    let color: Rgb565 = if _idx == 0 {
-        SPECIAL_BOID_COLOR
-    } else {
-        BOID_COLOR
-    };
-    if right == left {
-        Rectangle::new(top, top)
-            .into_styled(PrimitiveStyle::with_fill(color))
-            .draw(display)?
-    } else {
-        Triangle::new(top, right, left)
-            .into_styled(PrimitiveStyle::with_stroke(color, 1))
-            .draw(display)?;
-    }
-    Ok(())
+pub struct BoidRenderer {
+    _points_cache: [Option<(Point, Point, Point)>; M],
+    option: DrawOption,
 }
 
-pub fn draw_boids<D>(boids: &mut Boids, display: &mut D) -> Result<(), D::Error>
-where
-    D: DrawTarget<Rgb565>,
-{
-    let ctx: DrawContext = {
-        let (w, h) = display.size().into();
-        let center_x: i32 = (w / 2) as i32;
-        let center_y: i32 = (h / 2) as i32;
-        let scale: f32 = if center_x < center_y {
-            (center_x as f32) * 0.5
-        } else {
-            (center_y as f32) * 0.5
+impl BoidRenderer {
+    pub fn new() -> Self {
+        BoidRenderer {
+            _points_cache: [None; M],
+            option: DrawOption::new(),
+        }
+    }
+    pub fn clear<D>(
+        &self,
+        display: &mut D,
+    ) -> Result<(), D::Error>
+    where
+        D: DrawTarget<Rgb565>,
+    {
+        for p in self._points_cache.iter() {
+            if let Some((top, right, left)) = p {
+                if *right == *left || self.option.shape == Shape::DOT {
+                    Rectangle::new(*top, *top)
+                        .into_styled(PrimitiveStyle::with_fill(self.option.bg_color))
+                        .draw(display)?
+                } else {
+                    Triangle::new(*top, *right, *left)
+                        .into_styled(PrimitiveStyle::with_stroke(self.option.bg_color, 1))
+                        .draw(display)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub fn draw<D>(
+        &mut self,
+        display: &mut D,
+        boids: &Boids,
+    ) -> Result<(), D::Error>
+    where
+        D: DrawTarget<Rgb565>,
+    {
+        let ctx: DrawContext = {
+            let (w, h) = display.size().into();
+            let center_x: i32 = (w / 2) as i32;
+            let center_y: i32 = (h / 2) as i32;
+            let scale: f32 = if center_x < center_y {
+                (center_x as f32) * 0.5
+            } else {
+                (center_y as f32) * 0.5
+            };
+            DrawContext {
+                center_x,
+                center_y,
+                scale,
+            }
         };
-        DrawContext {
-            center_x,
-            center_y,
-            scale,
+        for (idx, boid) in boids.boids.iter().enumerate() {
+            let (top, right, left) = calc_points(boid.position, boid.velocity, &ctx, &self.option);
+            self._points_cache[idx] = Some((top, right, left));
+            let color = if idx == 0 { self.option.player_color } else { self.option.boid_color };
+            if right == left || self.option.shape == Shape::DOT {
+                Rectangle::new(top, top)
+                    .into_styled(PrimitiveStyle::with_fill(color))
+                    .draw(display)?
+            } else {
+                Triangle::new(top, right, left)
+                    .into_styled(PrimitiveStyle::with_stroke(color, 1))
+                    .draw(display)?;
+            }
         }
-    };
-    for (idx, boid) in boids.boids.iter().enumerate() {
-        if boid._prev_points != None {
-            clear_prev_boid(boid, idx, display, &ctx)?;
-        }
+        Ok(())
     }
-    for (idx, boid) in boids.boids.iter_mut().enumerate() {
-        draw_boid(boid, idx, display, &ctx)?;
-    }
-    Ok(())
 }

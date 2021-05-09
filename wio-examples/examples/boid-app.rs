@@ -57,9 +57,11 @@ fn main() -> ! {
 
     let mut boids: Boids = Boids::new();
     boids.init();
+    let mut renderer = BoidRenderer::new();
+
     loop {
         boids.update();
-        // clear_screen(&mut display).unwrap();
-        draw_boids(&mut boids, &mut display).unwrap();
+        renderer.clear(&mut display).unwrap();
+        renderer.draw(&mut display, &boids).unwrap();
     }
 }
