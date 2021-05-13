@@ -380,7 +380,8 @@ impl BoidRenderer {
         for (idx, boid) in boids.boids.iter().enumerate() {
             let (top, right, left) = calc_points(boid.position, boid.velocity, &ctx, &self.option);
             self._points_cache[idx] = Some((top, right, left));
-            let color = if idx == 0 { self.option.player_color } else { self.option.boid_color };
+            let intensity = 16 + clamp(boid.position[2] * 15.0, 0.0, 15.0) as u8;
+            let color = Rgb565::new(intensity, intensity * 2, intensity);
             if right == left || self.option.shape == Shape::DOT {
                 Rectangle::new(top, top)
                     .into_styled(PrimitiveStyle::with_fill(color))
