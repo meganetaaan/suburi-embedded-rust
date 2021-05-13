@@ -11,20 +11,21 @@ use embedded_graphics::style::PrimitiveStyle;
 use embedded_graphics::DrawTarget;
 use micromath::F32Ext;
 use rand::prelude::*;
-const COHESION_FORCE: f32 = 0.004;
+const COHESION_FORCE: f32 = 0.005;
 const SEPARATION_FORCE: f32 = 0.002;
 const ALIGNMENT_FORCE: f32 = 0.04;
 const BOUNDARY_FORCE: f32 = 0.01;
 const COHESION_DISTANCE: f32 = 0.5;
 const SEPARATION_DISTANCE: f32 = 0.1;
 const ALIGNMENT_DISTANCE: f32 = 0.1;
-const COHESION_ANGLE: f32 = PI / 2.2;
-const SEPARATION_ANGLE: f32 = PI / 2.0;
-const ALIGNMENT_ANGLE: f32 = PI / 2.5;
+const COHESION_ANGLE: f32 = PI / 2.0;
+// const SEPARATION_ANGLE: f32 = PI / 2.0;
+const SEPARATION_ANGLE: f32 = PI / 1.5;
+const ALIGNMENT_ANGLE: f32 = PI * 1.2;
 const MIN_VELOCITY: f32 = 0.005;
 const MAX_VELOCITY: f32 = 0.03;
 const N: usize = 3;
-const M: usize = 30;
+const M: usize = 100;
 
 const WING_WIDTH: f32 = 4.0;
 pub const BG_COLOR: Rgb565 = Rgb565::BLACK;
@@ -41,6 +42,16 @@ const DEFAULT_SHAPE: Shape = Shape::TRIANGLE;
 pub struct Boid {
     position: [f32; N],
     velocity: [f32; N],
+}
+
+fn clamp<Num>(v: Num, min: Num, max: Num) -> Num where Num: PartialOrd<Num> {
+    if v < min {
+        min
+    } else if v > max {
+        max
+    } else {
+        v
+    }
 }
 
 fn norm(x: [f32; N]) -> f32 {
@@ -225,14 +236,14 @@ impl Boids {
         }
         for (idx, boid) in self.boids.iter_mut().enumerate() {
             boid.velocity = plus(
-                boid.velocity,
-                plus(
+                multiply(boid.velocity, 1.0),
+                multiply(plus(
                     self._dv_coh[idx],
                     plus(
                         self._dv_sep[idx],
                         plus(self._dv_ali[idx], self._dv_bnd[idx]),
                     ),
-                ),
+                ), 0.4)
             );
             let v_abs = norm(boid.velocity);
             if v_abs < MIN_VELOCITY {
@@ -367,9 +378,9 @@ impl BoidRenderer {
             let center_x: i32 = (w / 2) as i32;
             let center_y: i32 = (h / 2) as i32;
             let scale: f32 = if center_x < center_y {
-                (center_x as f32) * 0.5
+                (center_x as f32) * 0.7
             } else {
-                (center_y as f32) * 0.5
+                (center_y as f32) * 0.7
             };
             DrawContext {
                 center_x,

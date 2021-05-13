@@ -5,8 +5,8 @@ use embedded_graphics::prelude::*;
 use embedded_graphics::{egrectangle, primitive_style, pixelcolor::Rgb565};
 use embedded_graphics_simulator::*;
 
-static SCREEN_WIDTH: u16 = 320;
-static SCREEN_HEIGHT: u16 = 240;
+static SCREEN_WIDTH: u16 = 480;
+static SCREEN_HEIGHT: u16 = 360;
 
 fn clear_screen<T: embedded_graphics::DrawTarget<Rgb565>>(
     display: &mut T,
